@@ -21,19 +21,15 @@ Mac 菜单栏里的「下一步该谁动」：PitBus 替你盯着 Slack、飞书
 - **控制：** 要处理的事只有三个状态：等你、等外部、已结束。等别人、等 Claude 会话、等某个时间点，区别只在叫醒条件，所以是同一个状态。
 
 ```mermaid
-stateDiagram-v2
-    state "等你" as mine
-    state "等外部" as theirs
-    state "已结束" as done
-    state "知会 / 噪音" as fyi
-    [*] --> mine: 需要我做点什么，或拿不准
-    [*] --> fyi: 只需知道
-    fyi --> mine: 我改判，或对方追问
-    mine --> theirs: 我做了动作，等回音
-    mine --> done: 做完，或决定不做
-    theirs --> mine: 有动静、到点、截止已过
-    theirs --> done: 外部直接办完
-    done --> mine: 同一件事有新动静
+flowchart TD
+    arrive(("事件到达")) -->|需要我做点什么，或拿不准| mine["等你"]
+    arrive -->|只需知道| fyi["知会 / 噪音"]
+    fyi -->|我改判，或对方追问| mine
+    mine -->|我做了动作，等回音| theirs["等外部"]
+    theirs -->|有动静、到点、截止已过| mine
+    mine -->|做完，或决定不做| done["已结束"]
+    theirs -->|外部直接办完| done
+    done -->|同一件事有新动静| mine
 ```
 
 状态机本身不保证事情不掉地上，PitBus 在写入时检查下面几条：
