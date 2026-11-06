@@ -184,6 +184,8 @@ struct SettingsView: View {
         let sources = model.data.sources
         if selected == "_connect" {
             ConnectPage(model: model)
+        } else if selected == "_look" {
+            LookPage()
         } else if let s = sources.first(where: { $0.id == selected }) ?? sources.first {
             if s.connectable { ChannelPage(source: s, model: model) } else { SourcePage(source: s, model: model) }
         } else {
@@ -216,6 +218,11 @@ struct Sidebar: View {
                     Text("接入")
                     Spacer()
                 }
+                SidebarItem(selected: selected == "_look", action: { selected = "_look" }) {
+                    Image(systemName: "textformat.size").frame(width: 22)
+                    Text("外观")
+                    Spacer()
+                }
             }
             .padding(10)
         }
@@ -232,7 +239,7 @@ struct SidebarSource: View {
         let s = source
         let flagged: Bool = s.status != "enabled" || s.ok == 0
         return SidebarItem(selected: selected == s.id, action: { selected = s.id }) {
-            SourceIcon(app: s.app, fallback: s.symbol).opacity(s.isConnected ? 1 : 0.5)
+            SourceIcon(app: s.app, fallback: s.symbol, scaled: false).opacity(s.isConnected ? 1 : 0.5)
             Text(s.title).lineLimit(1)
             if let org = s.org { Text(org).font(.system(size: 10)).foregroundColor(.secondary) }
             Spacer(minLength: 4)
@@ -305,7 +312,7 @@ struct ChannelPage: View {
         let trying = s.status == "enabled"
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center, spacing: 12) {
-                SourceIcon(app: s.app, fallback: s.symbol).scaleEffect(1.6).frame(width: 36, height: 36)
+                SourceIcon(app: s.app, fallback: s.symbol, scaled: false).scaleEffect(1.6).frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(s.title).font(.system(size: 17, weight: .semibold))
                     Text(trying ? (s.ok == 0 ? (s.error ?? "还没跑通") : "已启用，等第一次跑通")
@@ -350,7 +357,7 @@ struct SourcePage: View {
         let s = source
         let failing = s.ok == 0 || !s.problemList.isEmpty
         return HStack(alignment: .center, spacing: 12) {
-            SourceIcon(app: s.app, fallback: s.symbol).scaleEffect(1.6).frame(width: 36, height: 36)
+            SourceIcon(app: s.app, fallback: s.symbol, scaled: false).scaleEffect(1.6).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 3) {
                 Text(s.title).font(.system(size: 17, weight: .semibold))
                 HStack(spacing: 6) {
@@ -533,6 +540,52 @@ enum ClaudeOpen {
         "terminal": "在「终端」里运行 Claude Code，会话直接开始，不用再按回车。",
         "herdr": "在 Ghostty 的 herdr 里运行 Claude Code，会话直接开始；有新消息时 PitBus 直接通知正在等待的会话，不需要会话自己在后台监听。",
     ]
+}
+
+struct LookPage: View {
+    @AppStorage(Look.scaleKey) var textScale = 1.0
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("外观").font(.system(size: 17, weight: .semibold))
+                RowGroup(title: "字号", footer: "作用于菜单栏弹窗和历史记录。弹窗打开时按 ⌘+ / ⌘- 调整，⌘0 恢复标准。") {
+                    GroupRow(last: false) {
+                        Text("文字大小").font(.system(size: 13))
+                        Spacer()
+                        Picker("", selection: Binding(get: { Look.level(textScale) }, set: { textScale = $0 })) {
+                            ForEach(Look.scales, id: \.value) { Text($0.name).tag($0.value) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    }
+                    GroupRow(last: true) {
+                        preview
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    // 和弹窗里一行事项同样的排法，选档时直接看到效果
+    var preview: some View {
+        let k = CGFloat(Look.level(textScale))
+        return HStack(alignment: .top, spacing: 8 * k) {
+            Image(systemName: "bubble.left").font(.system(size: 13 * k)).foregroundColor(.secondary)
+                .frame(width: 18 * k)
+            VStack(alignment: .leading, spacing: 3 * k) {
+                HStack {
+                    Text("Alex 在 #product").font(.system(size: 13 * k, weight: .medium)).lineLimit(1)
+                    Spacer()
+                    Text("20:06").font(.system(size: 11 * k)).foregroundColor(.secondary)
+                }
+                Text("弹窗的字号可以调大一些吗？").font(.system(size: 12.5 * k)).lineLimit(1)
+                Text("等你回复 · Slack").font(.system(size: 11 * k)).foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .animation(.easeOut(duration: 0.15), value: textScale)
+    }
 }
 
 struct ConnectPage: View {

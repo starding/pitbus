@@ -76,6 +76,7 @@ final class HistoryModel: ObservableObject {
 // MARK: window: sources on the left, the handled things by day on the right
 
 struct HistoryView: View {
+    @AppStorage(Look.scaleKey) var textScale = 1.0
     @ObservedObject var model: HistoryModel
     let open: (String?) -> Void
 
@@ -92,19 +93,20 @@ struct HistoryView: View {
         }
         .frame(minWidth: 640, minHeight: 400)
         .background(OverlayScrollers())
+        .id(textScale)
         .onAppear { model.load() }
     }
 
     @ViewBuilder var list: some View {
         if model.items.isEmpty {
             Text(model.query.isEmpty ? "还没有处理过的事项" : "没有找到「\(model.query)」")
-                .font(.system(size: 13)).foregroundColor(.secondary)
+                .font(Look.font(13)).foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.days, id: \.0) { day, rows in
-                        Text(day).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+                        Text(day).font(Look.font(11, weight: .semibold)).foregroundColor(.secondary)
                             .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
                         ForEach(rows) { HistoryRow(row: $0, showSource: model.source == nil, open: open) }
                     }
@@ -146,7 +148,7 @@ struct HistorySidebar: View {
             icon()
             Text(title).lineLimit(1)
             Spacer(minLength: 4)
-            Text("\(count)").font(.system(size: 11)).foregroundColor(.secondary)
+            Text("\(count)").font(Look.font(11)).foregroundColor(.secondary)
         }
     }
 }
@@ -163,7 +165,7 @@ struct SearchField: View {
                     .buttonStyle(.plain).foregroundColor(.secondary)
             }
         }
-        .font(.system(size: 13))
+        .font(Look.font(13))
         .padding(.horizontal, 8).frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
     }
@@ -180,15 +182,15 @@ struct HistoryRow: View {
         HStack(spacing: 10) {
             SourceIcon(app: row.app, fallback: "checkmark.circle", size: 16)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.system(size: 13)).lineLimit(1)
-                Text(meta).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                Text(row.title).font(Look.font(13)).lineLimit(1)
+                Text(meta).font(Look.font(11)).foregroundColor(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if hover, let s = row.session {
-                Button("打开会话") { open(s.link) }.buttonStyle(.borderless).font(.system(size: 11))
+                Button("打开会话") { open(s.link) }.buttonStyle(.borderless).font(Look.font(11))
             }
             Text(row.updated.components(separatedBy: " ").last ?? row.updated)
-                .font(.system(size: 11)).foregroundColor(.secondary)
+                .font(Look.font(11)).foregroundColor(.secondary)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 6).fill(hover ? Color.primary.opacity(0.06) : .clear))

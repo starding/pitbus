@@ -38,6 +38,20 @@ struct Pit {
 // An opaque panel with the system's rounded corners and shadow; it can take keys so a draft can be edited.
 final class Panel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    // ⌘+ / ⌘= 放大，⌘- 缩小，⌘0 恢复标准，和浏览器、Slack 一样
+    override func performKeyEquivalent(with e: NSEvent) -> Bool {
+        let mods = e.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.shift, .numericPad, .function])
+        if mods == .command, let c = e.charactersIgnoringModifiers {
+            switch c {
+            case "+", "=": Look.step(1); return true
+            case "-": Look.step(-1); return true
+            case "0": Look.step(0); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: e)
+    }
 }
 
 final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -147,6 +161,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let size = host.view.fittingSize
         var f = panel.frame
         f.origin.y = f.maxY - size.height
+        f.origin.x = f.midX - size.width / 2  // 换字号时宽度变了，保持居中
+        if let vf = panel.screen?.visibleFrame { f.origin.x = min(max(f.origin.x, vf.minX + 8), vf.maxX - size.width - 8) }
         f.size = size
         panel.setFrame(f, display: true)
         panel.invalidateShadow()

@@ -344,8 +344,26 @@ enum Look {
     static let orange = Color(NSColor.systemOrange)
     static let red = Color(NSColor.systemRed)
     static let green = Color(NSColor.systemGreen)
-    static let width: CGFloat = 400
     static let radius: CGFloat = 12
+
+    // 字号：三档，文字、图标和弹窗宽度按同一个倍数放大，标题与正文的比例不变
+    static let scaleKey = "textScale"
+    static let scales: [(name: String, value: Double)] = [("标准", 1.0), ("大", 1.15), ("特大", 1.3)]
+    static var scale: CGFloat { CGFloat(level(UserDefaults.standard.double(forKey: scaleKey))) }
+    // 存的值就近落到三档之一；没设过或不认识的值按标准
+    static func level(_ v: Double) -> Double {
+        scales.map { $0.value }.first { abs($0 - v) < 0.01 } ?? 1
+    }
+    static var width: CGFloat { (400 * scale).rounded() }
+    static func font(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        .system(size: (size * scale * 2).rounded() / 2, weight: weight, design: design)
+    }
+    // ⌘+ / ⌘- 在三档之间移动，⌘0 回到标准
+    static func step(_ d: Int) {
+        let i = scales.firstIndex { CGFloat($0.value) == scale } ?? 0  // scale 总是三档之一
+        let n = d == 0 ? 0 : min(max(i + d, 0), scales.count - 1)
+        UserDefaults.standard.set(scales[n].value, forKey: scaleKey)
+    }
 
     // 今天 20:06 → 20:06: today is the default, so it is not said
     static let groupStates: Set<String> = ["等你回复", "待你响应", "待你决定", "等你决定"]
@@ -410,9 +428,11 @@ struct SourceIcon: View {
     let fallback: String
     var badge: Color? = nil
     var size: CGFloat = 20
+    var scaled = true  // 弹窗和历史记录跟字号一起放大；设置窗口不放大
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        let size = self.size * (scaled ? Look.scale : 1)
+        return ZStack(alignment: .bottomTrailing) {
             if let a = app, let img = AppIcons.gray(a) {
                 Image(nsImage: img).resizable().interpolation(.high).frame(width: size, height: size)
             } else {
@@ -468,6 +488,7 @@ struct HeightKey: PreferenceKey {
 
 struct PanelView: View {
     @ObservedObject var model: Model
+    @AppStorage(Look.scaleKey) var textScale = 1.0
     @State var showHistory = ProcessInfo.processInfo.environment["PIT_SHOW_HISTORY"] != nil
     @State var showFyi = ProcessInfo.processInfo.environment["PIT_SHOW_FYI"] != nil
 
@@ -483,7 +504,7 @@ struct PanelView: View {
                     .background(OverlayScrollers())
                     .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
             }
-            .frame(height: min(max(model.contentHeight, 60), Look.maxBody))
+            .frame(height: min(max(model.contentHeight, 60), Look.maxBody * Look.scale))
             Divider()
             FreshnessList(items: s.freshness.filter { $0.id != "system" }, mine: mineBySource(s), model: model)
         }
@@ -494,6 +515,8 @@ struct PanelView: View {
         .overlay(RoundedRectangle(cornerRadius: Look.radius, style: .continuous)
             .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
         .onPreferenceChange(HeightKey.self) { model.contentHeight = $0 }
+        .id(textScale)  // 换档后整个面板按新字号重新排版
+        .onChange(of: textScale) { _ in DispatchQueue.main.async { (NSApp.delegate as? App)?.fitPanel() } }
     }
 
     @State var showTheirs = ProcessInfo.processInfo.environment["PIT_OPEN"] != nil  // a preview shows it open
@@ -503,7 +526,7 @@ struct PanelView: View {
     // with a reason; then what asks nothing (new messages) and what is closed.
     @ViewBuilder func content(_ s: Status) -> some View {
         let s = model.only.map { src in s.only(src) } ?? s
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0 * Look.scale) {
             if let src = model.only {
                 Row(action: { model.only = nil }) {
                     HStack(spacing: 4) {
@@ -511,12 +534,12 @@ struct PanelView: View {
                         Spacer()
                         Text("显示全部").foregroundColor(.accentColor)
                     }
-                    .font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+                    .font(Look.font(11, weight: .semibold)).foregroundColor(.secondary)
                 }
             }
             let mine = s.objects.filter { !$0.waitsOnOthers }
             if mine.isEmpty {
-                Label("没有等你的事", systemImage: "checkmark.circle").font(.system(size: 13)).foregroundColor(.secondary)
+                Label("没有等你的事", systemImage: "checkmark.circle").font(Look.font(13)).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity).padding(.vertical, 24)
             } else {
                 HStack(alignment: .lastTextBaseline) {
@@ -551,7 +574,7 @@ struct PanelView: View {
                     ForEach(s.history) { DoneRow(row: $0, model: model) }
                     Row(action: { model.openHistory?() }) {
                         Text(s.historyTotal > s.history.count ? "全部历史（\(s.historyTotal)）…" : "全部历史…")
-                            .font(.system(size: 12)).foregroundColor(.accentColor).padding(.leading, 22)
+                            .font(Look.font(12)).foregroundColor(.accentColor).padding(.leading, 22)
                     }
                 }
             }
@@ -595,8 +618,8 @@ struct IconButton: View {
     var name: String { String(help.split(separator: "：").first ?? Substring(help)) }
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
-            if hover { Text(name).font(.system(size: 11)).lineLimit(1).fixedSize() }
+            Image(systemName: symbol).font(Look.font(11, weight: .semibold))
+            if hover { Text(name).font(Look.font(11)).lineLimit(1).fixedSize() }
         }
         .padding(.horizontal, hover ? 7 : 0)
         .frame(minWidth: 24, minHeight: 20)
@@ -615,12 +638,12 @@ struct Header: View {
     var body: some View {
         let s = status
         HStack(spacing: 12) {
-            Text("PitBus").font(.system(size: 13, weight: .semibold))
+            Text("PitBus").font(Look.font(13, weight: .semibold))
             Spacer()
             if !s.pendingSources.isEmpty { Text("\(s.pendingSources.count) 个来源待启用").foregroundColor(Look.orange) }
             MoreMenu(model: model)
         }
-        .font(.system(size: 12))
+        .font(Look.font(12))
         .padding(.horizontal, 16).frame(height: 40)
     }
 }
@@ -628,7 +651,7 @@ struct Header: View {
 struct SectionTitle: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+        Text(text).font(Look.font(11, weight: .semibold)).foregroundColor(.secondary)
             .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
     }
 }
@@ -641,7 +664,7 @@ struct Row<Content: View>: View {
 
     var body: some View {
         content()
-            .padding(.horizontal, 8).padding(.vertical, 7)
+            .padding(.horizontal, 8).padding(.vertical, 7 * Look.scale)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 6).fill(hover && action != nil ? Color.primary.opacity(0.06) : .clear))
             .contentShape(Rectangle())
@@ -655,7 +678,7 @@ struct Icon: View {
     let name: String
     var color: Color = .secondary
     var body: some View {
-        Image(systemName: name).font(.system(size: 13)).foregroundColor(color).frame(width: 18, alignment: .center)
+        Image(systemName: name).font(Look.font(13)).foregroundColor(color).frame(width: 18 * Look.scale, alignment: .center)
     }
 }
 
@@ -667,7 +690,7 @@ struct Quoted: View {
     var body: some View {
         HStack(spacing: 8) {
             Rectangle().fill(Color.secondary.opacity(0.35)).frame(width: 2)
-            Text(rich).font(.system(size: 12.5)).lineLimit(lines).fixedSize(horizontal: false, vertical: true)
+            Text(rich).font(Look.font(12.5)).lineLimit(lines).fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
     }
@@ -686,13 +709,13 @@ struct DraftRow: View {
         Row(action: nil) {
             HStack(alignment: .top, spacing: 8) {
                 SourceIcon(app: draft.app, fallback: "paperplane", badge: Look.orange)
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 6 * Look.scale) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(draft.note ?? "草稿").font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        Text(draft.note ?? "草稿").font(Look.font(13, weight: .medium)).lineLimit(1)
                         Spacer()
-                        Text(draft.created).font(.system(size: 11)).foregroundColor(.secondary)
+                        Text(draft.created).font(Look.font(11)).foregroundColor(.secondary)
                     }
-                    Text("发到 \(draft.place) · \(draft.session.title)").font(.system(size: 11)).foregroundColor(.secondary)
+                    Text("发到 \(draft.place) · \(draft.session.title)").font(Look.font(11)).foregroundColor(.secondary)
                         .lineLimit(1)
                     DraftBody(draft: draft, model: model)
                 }
@@ -711,7 +734,7 @@ struct DraftBody: View {
     var body: some View {
         Group {
             if editing {
-                TextEditor(text: $text).font(.system(size: 12.5)).frame(minHeight: 140)
+                TextEditor(text: $text).font(Look.font(12.5)).frame(minHeight: 140)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
                 HStack {
                     Button("保存") { model.save(draft, text: text); editing = false }.keyboardShortcut(.defaultAction)
@@ -752,16 +775,16 @@ struct ObjectRow: View {
                 // grouped by what it asks, so each row says where it came from
                 SourceIcon(app: obj.app, fallback: Look.symbol(object: obj), badge: inSession || obj.waitsOnOthers ? nil : color, size: 16)
                     .padding(.top, 1).help(obj.sourceTitle)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 3 * Look.scale) {
                     // under the pointer the actions take the time's place, so a long title ends before them
                     HStack(alignment: .center, spacing: 8) {
-                        Text(obj.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        Text(obj.title).font(Look.font(13, weight: .medium)).lineLimit(1)
                         if obj.unread == true { UnreadDot() }
                         Spacer(minLength: 4)
                         if hover {
                             actions.fixedSize()
                         } else {
-                            Text(Look.short(obj.updated)).font(.system(size: 11)).foregroundColor(.secondary)
+                            Text(Look.short(obj.updated)).font(Look.font(11)).foregroundColor(.secondary)
                         }
                     }
                     .frame(minHeight: 20)
@@ -772,11 +795,11 @@ struct ObjectRow: View {
                         if let r = obj.reason { Text(r).foregroundColor(.secondary).lineLimit(1) }
                         else if let d = obj.detail { Text(d).foregroundColor(.secondary).lineLimit(1) }
                     }
-                    .font(.system(size: 12)).help(obj.text ?? "")
+                    .font(Look.font(12)).help(obj.text ?? "")
                     if let w = obj.watch {
-                        watching(w).font(.system(size: 11)).lineLimit(1)
+                        watching(w).font(Look.font(11)).lineLimit(1)
                     } else if let line = follow {
-                        Text(line).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                        Text(line).font(Look.font(11)).foregroundColor(.secondary).lineLimit(1)
                     }
                     if let id = obj.draft, let d = model.status.drafts.first(where: { $0.id == id }) {
                         DraftBody(draft: d, model: model).padding(.top, 3)
@@ -785,7 +808,7 @@ struct ObjectRow: View {
                         let draft = model.status.drafts.first { $0.id == a.draft }
                         Quoted(text: t, lines: draft == nil ? 12 : 6, markdown: true).padding(.top, 3)
                         if let d = draft {
-                            Text("回复草稿 · 发到 \(d.place)").font(.system(size: 11)).foregroundColor(.secondary)
+                            Text("回复草稿 · 发到 \(d.place)").font(Look.font(11)).foregroundColor(.secondary)
                                 .padding(.top, 4)
                             DraftBody(draft: d, model: model)
                         }
@@ -884,7 +907,7 @@ struct TriageButton: View {
                        "fyi": "交给 Claude 汇总新消息的要点，找出其实需要你处理的"]
     var body: some View {
         if count >= 5 {
-            Button("日清") { model.triage(group) }.buttonStyle(.borderless).font(.system(size: 11))
+            Button("日清") { model.triage(group) }.buttonStyle(.borderless).font(Look.font(11))
                 .foregroundColor(.accentColor).help(Self.help[group] ?? "").padding(.trailing, 16)
         }
     }
@@ -896,12 +919,12 @@ struct FoldToggle: View {
     var body: some View {
         Button(action: { open.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                Image(systemName: "chevron.right").font(Look.font(9, weight: .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Text(text)
                 Spacer()
             }
-            .font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+            .font(Look.font(11, weight: .semibold)).foregroundColor(.secondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -918,10 +941,10 @@ struct FyiRow: View {
         Row(action: obj.link == nil ? nil : { model.open(obj.link) }) {
             HStack(spacing: 8) {
                 SourceIcon(app: obj.app, fallback: Look.symbol(object: obj), size: 14)
-                Text(obj.title).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+                Text(obj.title).font(Look.font(12)).lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: 170, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 if obj.unread == true { UnreadDot() }
-                Text(obj.detail ?? "").font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                Text(obj.detail ?? "").font(Look.font(12)).foregroundColor(.secondary).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if hover {
                     HStack(spacing: 4) {
@@ -932,7 +955,7 @@ struct FyiRow: View {
                     }
                     .fixedSize()
                 } else {
-                    Text(Look.short(obj.updated)).font(.system(size: 11)).foregroundColor(.secondary).fixedSize()
+                    Text(Look.short(obj.updated)).font(Look.font(11)).foregroundColor(.secondary).fixedSize()
                 }
             }
         }
@@ -946,12 +969,12 @@ struct HistoryToggle: View {
     var body: some View {
         Button(action: { open.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                Image(systemName: "chevron.right").font(Look.font(9, weight: .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
                 Text(today > 0 ? "已结束 · 今天 \(today)" : "已结束")
                 Spacer()
             }
-            .font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+            .font(Look.font(11, weight: .semibold)).foregroundColor(.secondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -968,7 +991,7 @@ struct DoneRow: View {
         Row(action: row.link == nil ? nil : { model.open(row.link) }) {
             HStack(spacing: 8) {
                 SourceIcon(app: row.app, fallback: "checkmark.circle", size: 14).help(row.sourceTitle)
-                Text(row.title).font(.system(size: 12)).lineLimit(1)
+                Text(row.title).font(Look.font(12)).lineLimit(1)
                 Spacer(minLength: 4)
                 // ended is not final: under the pointer it can come back to the person, or go to Claude
                 if hover {
@@ -983,7 +1006,7 @@ struct DoneRow: View {
                 } else {
                     // who handled it: a session that answered for the person is named
                     Text((row.session.map { "「\($0.title)」" } ?? "") + "\(row.state) · \(Look.short(row.updated))")
-                        .font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1).fixedSize()
+                        .font(Look.font(11)).foregroundColor(.secondary).lineLimit(1).fixedSize()
                 }
             }
             .foregroundColor(.secondary)
@@ -1003,22 +1026,22 @@ struct EventRow: View {
         Row(action: { model.open(event.link ?? event.session?.link) }) {
             HStack(alignment: .top, spacing: 8) {
                 SourceIcon(app: event.app, fallback: Look.symbol(source: event.source), badge: event.pending ? Look.orange : nil)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 4 * Look.scale) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(event.sender ?? event.place).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                        Text(event.place).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                        Text(event.sender ?? event.place).font(Look.font(13, weight: .medium)).lineLimit(1)
+                        Text(event.place).font(Look.font(11)).foregroundColor(.secondary).lineLimit(1)
                         Spacer()
-                        Text(event.recorded).font(.system(size: 11)).foregroundColor(.secondary)
+                        Text(event.recorded).font(Look.font(11)).foregroundColor(.secondary)
                     }
                     if let q = event.quote, !q.isEmpty {
-                        Text("评论在「\(q)」").font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                        Text("评论在「\(q)」").font(Look.font(11)).foregroundColor(.secondary).lineLimit(1)
                     }
                     if !event.text.isEmpty {
                         Quoted(text: event.text, lines: expanded ? nil : 3)
                     }
                     HStack(spacing: 12) {
                         if let w = event.waitingFor {
-                            Text(w).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                            Text(w).font(Look.font(11)).foregroundColor(.secondary).lineLimit(1)
                         }
                         Spacer()
                         if event.text.count > 120 {
@@ -1028,7 +1051,7 @@ struct EventRow: View {
                             Button("打开会话") { model.open(event.session?.link) }
                         }
                     }
-                    .buttonStyle(.borderless).font(.system(size: 11))
+                    .buttonStyle(.borderless).font(Look.font(11))
                 }
             }
         }
@@ -1045,14 +1068,14 @@ struct WaitingRow: View {
         Row(action: row.session.link == nil ? nil : { model.open(row.session.link) }) {
             HStack(alignment: .top, spacing: 8) {
                 SourceIcon(app: row.app, fallback: row.kind == "at" ? "clock" : "hourglass", badge: overdue ? Look.red : nil)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 2 * Look.scale) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(row.note ?? row.place).font(.system(size: 13)).lineLimit(1)
+                        Text(row.note ?? row.place).font(Look.font(13)).lineLimit(1)
                         Spacer()
                         Text(row.deadline.map { overdue ? "已过 \($0)" : "截止 \($0)" } ?? "")
-                            .font(.system(size: 11)).foregroundColor(overdue ? Look.red : .secondary)
+                            .font(Look.font(11)).foregroundColor(overdue ? Look.red : .secondary)
                     }
-                    Text(inSession ? "在等 · \(row.place)" : "\(row.place) · \(row.session.title)").font(.system(size: 11)).foregroundColor(.secondary)
+                    Text(inSession ? "在等 · \(row.place)" : "\(row.place) · \(row.session.title)").font(Look.font(11)).foregroundColor(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -1111,7 +1134,7 @@ struct FreshnessList: View {
 
     func tip(_ f: Fresh, _ now: Date) -> some View {
         let n = mine[sourceKey(f.id)] ?? 0
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 2 * Look.scale) {
             Text(detail(f, now) + (n > 0 ? " · 等你 \(n) 件" : "")).foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             if f.id != "classifier" {
@@ -1119,8 +1142,8 @@ struct FreshnessList: View {
                     .foregroundColor(.secondary)
             }
         }
-        .font(.system(size: 11))
-        .frame(width: 236, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+        .font(Look.font(11))
+        .frame(width: 236 * Look.scale, alignment: .leading).fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.windowBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
@@ -1136,7 +1159,7 @@ struct FreshnessList: View {
                 SourceIcon(app: f.app, fallback: f.symbol ?? (f.id == "classifier" ? "cpu" : Look.symbol(source: f.id)), size: 12)
             }
             .opacity(idle && f.id != "classifier" ? 0.45 : 1)
-            if n > 0 { Text("\(n)").font(.system(size: 11, weight: .semibold)).foregroundColor(Look.orange).monospacedDigit() }
+            if n > 0 { Text("\(n)").font(Look.font(11, weight: .semibold)).foregroundColor(Look.orange).monospacedDigit() }
         }
         .padding(.horizontal, 5).padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: 5).fill(picked ? Color.primary.opacity(0.1) : .clear))
