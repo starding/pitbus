@@ -3142,13 +3142,18 @@ def status_data(conn):
         elif base and base["key"] in routes:
             rsid, person = routes[base["key"]]
             j["suggest"] = {"session": sess(rsid), "reason": "也是和 %s 的事" % person}
-        # mine: broken first, then what has a time (meetings, missed deadlines; soonest first), then newest;
+        # mine: broken first, then a meeting about to start (soonest first), then everything else newest first by
+        # the moment it became mine: a message when it arrived, a missed deadline when it passed, an invitation
+        # when it came. Old timeouts and far-off invitations must not sit above what just arrived.
         # out: the nearest deadline first
-        at_time = (float(get_cursor(conn, "gcal_at:%s" % base["key"]) or 0) if base and base["kind"] == "gcal"
-                   else (deadline if j["action"] == "nudge" else None))
+        meet_at = float(get_cursor(conn, "gcal_at:%s" % base["key"]) or 0) if base and base["kind"] == "gcal" else 0
+        soon = bool(meet_at and now - 900 <= meet_at <= now + 7200)
         last = written(base) if base else (t["subs"][0]["created"] if t["subs"] else now)
+        became = min(deadline, now) if j["action"] == "nudge" and deadline else last
+        if j["phase"] == "you" and j["action"] == "nudge" and deadline:
+            j["updated"] = fmt_rel(became)  # the time shown is the one it is sorted by: when the wait ran out
         j["_order"] = ((1, deadline or 9e12, 0) if j["phase"] == "them" else
-                       (0, 0 if j["action"] == "alert" else (1 if at_time else 2), at_time or -last))
+                       (0, 0 if j["action"] == "alert" else (1 if soon else 2), meet_at if soon else -became))
         objects.append(j)
     objects.sort(key=lambda j: j.pop("_order"))
     # FYI: messages that tell me something but ask nothing, for a day, read or not, until dismissed
