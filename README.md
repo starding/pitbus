@@ -22,7 +22,6 @@ Mac 菜单栏里的「下一步该谁动」：PitBus 替你盯着 Slack、飞书
 
 ```mermaid
 stateDiagram-v2
-    direction LR
     state "等你" as mine
     state "等外部" as theirs
     state "已结束" as done
