@@ -1,0 +1,8 @@
+menubar/build/
+__pycache__/
+# previews rendered from real data stay local
+menubar/panel-preview.png
+menubar/settings-preview.png
+menubar/icons-preview.png
+menubar/icons-zoom.png
+dist/
