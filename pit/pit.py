@@ -147,6 +147,8 @@ def db():
     conn.executescript(SCHEMA)
     if "object" not in [r["name"] for r in conn.execute("PRAGMA table_info(events)")]:
         conn.execute("ALTER TABLE events ADD COLUMN object TEXT")  # databases from before objects existed
+    # a thing's events are looked up by the thing on every status read; without this each lookup reads them all
+    conn.execute("CREATE INDEX IF NOT EXISTS events_object ON events(object)")
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(objects)")]
     if "app" not in cols:
         conn.execute("ALTER TABLE objects ADD COLUMN app TEXT")
@@ -1021,9 +1023,7 @@ def cmd_self_ask(a):
     # the person asked and moved on; tell them it is back, and where
     first = re.sub(r"[*#`>]", "", v["result"] or "").strip().split("\n")[0][:110]
     note = ("回复草稿在「确认代发」，" if v.get("draft") else "") + first
-    subprocess.run(["/usr/bin/osascript", "-e", "display notification %s with title %s" % (
-        applescript_str(note), applescript_str("Claude 已回答：%s" % task[:30] if v["status"] == "done"
-                                             else "Claude 没能完成：%s" % task[:30]))], capture_output=True)
+    notify("Claude 已回答：%s" % task[:30] if v["status"] == "done" else "Claude 没能完成：%s" % task[:30], note)
 
 
 def cmd_resume(a):
@@ -1521,14 +1521,29 @@ def notify_offline(conn):
     for r in rows:
         if r["heartbeat"] and now - r["heartbeat"] < HEARTBEAT_STALE:
             continue  # the watcher will pick it up
-        text = (json.loads(r["payload"]).get("text") or "")[:120]
-        title = "pit · %s" % (r["title"] or r["session"])
-        script = 'display notification %s with title %s' % (applescript_str(text), applescript_str(title))
-        try:
-            run(["/usr/bin/osascript", "-e", script], timeout=10)
-        except Exception as e:
-            log("notify: %s" % e)
+        notify(r["title"] or r["session"], (json.loads(r["payload"]).get("text") or "")[:120], session_link(r["session"]))
         conn.execute("UPDATE deliveries SET notified=1 WHERE id=?", (r["id"],))
+
+
+NOTIFY_DIR = os.path.join(DATA_DIR, "notify")
+
+
+def notify(title, text, link=None):
+    """A macOS notification that comes from PitBus: the menu bar app picks it up from NOTIFY_DIR and posts it under
+    its own name and icon, and a click opens `link`. With the app not running, AppleScript posts it instead, which
+    macOS shows as Script Editor's."""
+    if subprocess.run(["/usr/bin/pgrep", "-xq", "PitBus"]).returncode == 0:
+        os.makedirs(NOTIFY_DIR, exist_ok=True)
+        path = os.path.join(NOTIFY_DIR, "%.6f-%s.json" % (time.time(), uuid.uuid4().hex[:6]))
+        with open(path + ".tmp", "w") as f:
+            json.dump({"title": title, "text": text, "link": link}, f, ensure_ascii=False)
+        os.rename(path + ".tmp", path)  # the app sees it whole or not at all
+        return
+    try:
+        run(["/usr/bin/osascript", "-e", "display notification %s with title %s" % (applescript_str(text), applescript_str(title))],
+            timeout=10)
+    except Exception as e:
+        log("notify: %s" % e)
 
 
 def applescript_str(s):
@@ -3991,6 +4006,12 @@ def build_parser():
     x.add_argument("--state", help="only this state")
     x.add_argument("--timeout")
     x.set_defaults(f=cmd_watch_object)
+
+    x = sp.add_parser("notify", help="post a macOS notification from PitBus")
+    x.add_argument("title")
+    x.add_argument("text")
+    x.add_argument("--link", help="what a click on it opens")
+    x.set_defaults(f=lambda a: notify(a.title, a.text, a.link))
 
     x = sp.add_parser("emit")
     x.add_argument("object", help="kind:id")

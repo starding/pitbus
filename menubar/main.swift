@@ -57,6 +57,7 @@ final class Panel: NSPanel {
 final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let model = Model()
+    let notifier = Notifier()
     var panel: Panel!
     var host: NSHostingController<PanelView>!
     var hotKey: EventHotKeyRef?
@@ -135,8 +136,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.async { self?.fitPanel() }
         }
         registerHotKey()
+        notifier.open = { [weak self] link in self?.model.open(link) }
+        notifier.start()
         model.reload()
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.model.reload() }
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in self?.model.reloadInBackground() }
     }
 
     func makePanel() {
@@ -198,7 +201,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.orderOut(nil)
             return
         }
-        model.reload()
+        model.reloadInBackground()  // the panel opens on what the last tick read; the fresh read follows
         host.view.layoutSubtreeIfNeeded()
         let size = host.view.fittingSize
         var anchor = NSEvent.mouseLocation
@@ -228,6 +231,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
 }
 
 let args = CommandLine.arguments
+if let i = args.firstIndex(of: "--render-app-icon"), i + 1 < args.count {
+    renderAppIconSet(to: args[i + 1])
+    exit(0)
+}
 if let i = args.firstIndex(of: "--render-icon"), i + 1 < args.count {
     renderIconPreview(to: args[i + 1])
     exit(0)

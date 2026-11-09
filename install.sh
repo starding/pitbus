@@ -75,6 +75,9 @@ else
   swiftc -O "$ROOT"/menubar/*.swift -o "$ROOT/menubar/build/PitBus"
   cp "$ROOT/menubar/build/PitBus" "$APP/Contents/MacOS/PitBus"
   sh "$ROOT/menubar/info-plist.sh" > "$APP/Contents/Info.plist"
+  mkdir -p "$APP/Contents/Resources" && cp "$ROOT/menubar/PitBus.icns" "$APP/Contents/Resources/"
+  # signed as a whole bundle, so macOS knows its notifications are PitBus's
+  codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 fi
 
 # 4. LaunchAgents: the daemon stays alive; the menu bar app starts at login

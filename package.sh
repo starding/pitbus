@@ -18,6 +18,7 @@ done
 mkdir -p "$STAGE/PitBus.app/Contents/MacOS"
 lipo -create -output "$STAGE/PitBus.app/Contents/MacOS/PitBus" "$ROOT"/menubar/build/PitBus-{arm64,x86_64}
 sh "$ROOT/menubar/info-plist.sh" > "$STAGE/PitBus.app/Contents/Info.plist"
+mkdir -p "$STAGE/PitBus.app/Contents/Resources" && cp "$ROOT/menubar/PitBus.icns" "$STAGE/PitBus.app/Contents/Resources/"
 codesign --force --sign - "$STAGE/PitBus.app"
 
 rm -f "$OUT"

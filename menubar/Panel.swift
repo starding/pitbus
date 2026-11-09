@@ -200,8 +200,18 @@ final class Model: ObservableObject {
     var openHistory: (() -> Void)?
     var openWorkflow: (() -> Void)?
 
-    func reload() {
-        let r = Pit.run(["status"])
+    func reload() { apply(Pit.run(["status"])) }
+
+    /// read the status off the main thread: opening the panel and the 15-second tick show what is there at once
+    /// and never wait on pit
+    func reloadInBackground() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let r = Pit.run(["status"])
+            DispatchQueue.main.async { self?.apply(r) }
+        }
+    }
+
+    private func apply(_ r: (ok: Bool, out: String)) {
         if r.ok, let data = r.out.data(using: .utf8), let s = try? JSONDecoder().decode(Status.self, from: data) {
             status = s
         }

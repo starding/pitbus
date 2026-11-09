@@ -8,6 +8,7 @@ cat <<EOF
   <key>CFBundleName</key><string>PitBus</string>
   <key>CFBundleExecutable</key><string>PitBus</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>PitBus</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
 </dict></plist>

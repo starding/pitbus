@@ -59,3 +59,56 @@ func renderIconPreview(to path: String) {
     NSGraphicsContext.restoreGraphicsState()
     writePNG(rep, path)
 }
+
+// The app icon, for Launchpad and Finder: the menu bar glyph in white on a deep slate tile, with the point in the
+// orange that marks 「等你」 on the panel. The tile follows macOS's grid: 824 of 1024, centered, corners 185.
+func appIcon(pixels: Int) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                               bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    let k = CGFloat(pixels) / 1024
+    let tile = NSRect(x: 100 * k, y: 100 * k, width: 824 * k, height: 824 * k)
+    let shape = NSBezierPath(roundedRect: tile, xRadius: 185 * k, yRadius: 185 * k)
+    NSGraphicsContext.saveGraphicsState()
+    let shadow = NSShadow()
+    shadow.shadowColor = NSColor(white: 0, alpha: 0.3)
+    shadow.shadowOffset = NSSize(width: 0, height: -10 * k)
+    shadow.shadowBlurRadius = 20 * k
+    shadow.set()
+    NSColor(red: 0.13, green: 0.15, blue: 0.20, alpha: 1).setFill()
+    shape.fill()
+    NSGraphicsContext.restoreGraphicsState()
+    NSGradient(starting: NSColor(red: 0.22, green: 0.25, blue: 0.32, alpha: 1),
+               ending: NSColor(red: 0.10, green: 0.11, blue: 0.15, alpha: 1))!.draw(in: shape, angle: -90)
+    // the glyph's 18-unit drawing, scaled into the tile with some air around it
+    let u = 824 * k / 24, ox = tile.minX + 3 * u, oy = tile.minY + 3.2 * u
+    func pt(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: ox + x * u, y: oy + y * u) }
+    func line(_ a: NSPoint, _ b: NSPoint, _ w: CGFloat) {
+        let p = NSBezierPath()
+        p.move(to: a)
+        p.line(to: b)
+        p.lineWidth = w * u
+        p.lineCapStyle = .round
+        p.stroke()
+    }
+    NSColor.white.set()
+    line(pt(1.5, 3.5), pt(16.5, 3.5), 1.5)
+    for x in [3.5, 7.0, 14.5] as [CGFloat] { line(pt(x, 3.5), pt(x, 5.5), 1.2) }
+    line(pt(11, 3.5), pt(11, 10), 1.5)
+    NSColor(red: 1.0, green: 0.62, blue: 0.04, alpha: 1).setFill()
+    NSBezierPath(ovalIn: NSRect(x: ox + (11 - 3.3) * u, y: oy + (12.5 - 3.3) * u, width: 6.6 * u, height: 6.6 * u)).fill()
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+// `PitBus --render-app-icon <folder.iconset>`: every size macOS wants. After changing the drawing:
+//   PitBus --render-app-icon /tmp/PitBus.iconset && iconutil -c icns /tmp/PitBus.iconset -o menubar/PitBus.icns
+func renderAppIconSet(to dir: String) {
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    for s in [16, 32, 128, 256, 512] {
+        writePNG(appIcon(pixels: s), "\(dir)/icon_\(s)x\(s).png")
+        writePNG(appIcon(pixels: s * 2), "\(dir)/icon_\(s)x\(s)@2x.png")
+    }
+}
