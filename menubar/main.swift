@@ -136,6 +136,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.async { self?.fitPanel() }
         }
         registerHotKey()
+        DistributedNotificationCenter.default().addObserver(forName: showNote, object: nil, queue: .main) { [weak self] _ in
+            self?.showPanel(underIcon: false)
+        }
         notifier.open = { [weak self] link in self?.model.open(link) }
         notifier.start()
         model.reload()
@@ -260,6 +263,31 @@ if let i = args.firstIndex(of: "--render-panel"), i + 1 < args.count {
     _ = NSApplication.shared
     renderPanelPreview(to: args[i + 1], dark: args.contains("dark"))
     exit(0)
+}
+
+// One PitBus at a time. Opening it from Launchpad or Finder while launchd already runs it can start a second
+// copy with a second icon: a copy of this same build asks the running one to show its panel and leaves; a copy
+// left from before an update is replaced by this one.
+let showNote = Notification.Name("dev.pit.menubar.show")
+let me = ProcessInfo.processInfo.processIdentifier
+let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.pit.menubar").filter { $0.processIdentifier != me }
+if !others.isEmpty {
+    let exe = Bundle.main.executableURL?.resolvingSymlinksInPath()
+    let built = (exe.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] } as? Date) ?? .distantPast
+    // launchDate is nil for a copy launchd started, so ask the kernel when each one started
+    func started(_ pid: pid_t) -> Date {
+        var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return .distantPast }
+        let t = info.kp_proc.p_un.__p_starttime
+        return Date(timeIntervalSince1970: Double(t.tv_sec) + Double(t.tv_usec) / 1e6)
+    }
+    let current = others.filter { $0.executableURL?.resolvingSymlinksInPath() == exe && started($0.processIdentifier) > built }
+    if !current.isEmpty {
+        DistributedNotificationCenter.default().postNotificationName(showNote, object: nil, userInfo: nil, deliverImmediately: true)
+        exit(0)
+    }
+    others.forEach { $0.forceTerminate() }
 }
 
 let app = NSApplication.shared

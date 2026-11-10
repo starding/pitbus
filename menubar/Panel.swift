@@ -71,7 +71,8 @@ struct Fresh: Decodable, Identifiable {
     let state: String
     let note: String?
     var symbol: String? = nil
-    enum CodingKeys: String, CodingKey { case id, label, app, symbol, interval, checked, state, note, lastOk = "last_ok" }
+    var error: String? = nil  // why it cannot connect, one line
+    enum CodingKeys: String, CodingKey { case id, label, app, symbol, interval, checked, state, note, error, lastOk = "last_ok" }
 }
 
 struct Sent: Decodable {
@@ -279,6 +280,19 @@ final class Model: ObservableObject {
         guard r.ok else {
             let fail = NSAlert()
             fail.messageText = "没能开始日清"
+            fail.informativeText = r.out
+            fail.runModal()
+            return
+        }
+        open(r.out.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// a source that cannot connect, handed to Claude with its error filled in
+    func fixSource(_ id: String) {
+        let r = Pit.run(["fix-source", id.hasPrefix("src:") ? String(id.dropFirst(4)) : id])
+        guard r.ok else {
+            let fail = NSAlert()
+            fail.messageText = "没能交给 Claude"
             fail.informativeText = r.out
             fail.runModal()
             return
@@ -1148,7 +1162,8 @@ struct FreshnessList: View {
             Text(detail(f, now) + (n > 0 ? " · 等你 \(n) 件" : "")).foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             if f.id != "classifier" {
-                Text((model.only == sourceKey(f.id) ? "点一下显示全部" : "点一下只看这个来源") + "，右键立即刷新")
+                Text((model.only == sourceKey(f.id) ? "点一下显示全部" : "点一下只看这个来源")
+                     + (f.error == nil ? "，右键立即刷新" : "，右键看报错或交给 Claude 解决"))
                     .foregroundColor(.secondary)
             }
         }
@@ -1178,6 +1193,11 @@ struct FreshnessList: View {
         .onTapGesture { if f.id != "classifier" { model.only = picked ? nil : key } }
         .contextMenu {
             if f.id != "classifier" {
+                if let e = f.error {
+                    Text(e)
+                    Button { model.fixSource(f.id) } label: { Label("交给 Claude 解决", systemImage: "sparkles") }
+                    Divider()
+                }
                 Button("立即刷新\(f.label)") { model.refreshSources(f.id) }
             }
         }
